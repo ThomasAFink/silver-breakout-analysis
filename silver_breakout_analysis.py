@@ -79,7 +79,7 @@ class SilverBreakoutAnalyzer:
         
         for idx, row in breakout_candidates.iterrows():
             breakout_date = idx
-            breakout_price = row['Close']
+            breakout_price = row['Low']  # Use the low of the breakout day
             breakout_return = row['Daily_Return']
             
             # Check if we have enough future data
@@ -87,17 +87,29 @@ class SilverBreakoutAnalyzer:
             if future_idx >= len(self.data):
                 continue
             
-            # Check if price holds above breakout for hold_days
+            # Check if price holds above breakout for at least hold_days
             holds_above = True
-            for i in range(1, hold_days + 1):
+            consecutive_days_above = 0
+            
+            # Check each day after the breakout
+            for i in range(1, len(self.data) - self.data.index.get_loc(breakout_date)):
                 check_idx = self.data.index.get_loc(breakout_date) + i
                 if check_idx >= len(self.data):
-                    holds_above = False
                     break
                 
-                if self.data.iloc[check_idx]['Close'] < breakout_price:
-                    holds_above = False
-                    break
+                if self.data.iloc[check_idx]['Close'] >= breakout_price:
+                    consecutive_days_above += 1
+                else:
+                    # Price dropped below breakout level, check if we already met the minimum
+                    if consecutive_days_above >= hold_days:
+                        break
+                    else:
+                        holds_above = False
+                        break
+            
+            # Check if we met the minimum hold requirement
+            if consecutive_days_above < hold_days:
+                holds_above = False
             
             if not holds_above:
                 continue
@@ -107,9 +119,11 @@ class SilverBreakoutAnalyzer:
             future_return = ((future_price - breakout_price) / breakout_price) * 100
             is_winner = future_price > breakout_price
             
-            # Get the 2-day hold period data for visualization
+            # Get the actual hold period data for visualization (up to 10 days max for display)
             hold_period_data = []
-            for i in range(hold_days + 1):
+            max_display_days = min(10, len(self.data) - self.data.index.get_loc(breakout_date))
+            
+            for i in range(max_display_days):
                 check_idx = self.data.index.get_loc(breakout_date) + i
                 if check_idx < len(self.data):
                     hold_period_data.append({
@@ -171,9 +185,12 @@ class SilverBreakoutAnalyzer:
         colors = ['green' if b else 'red' for b in self.breakouts['is_winner']]
         
         for i, (_, breakout) in enumerate(self.breakouts.iterrows()):
-            # Plot the breakout day
-            ax1.scatter(breakout['breakout_date'], breakout['breakout_price'], 
+            # Plot the breakout day (close price) and breakout level (low)
+            close_price = self.data.loc[breakout['breakout_date'], 'Close']
+            ax1.scatter(breakout['breakout_date'], close_price, 
                        color=colors[i], s=50, alpha=0.8, zorder=5)
+            ax1.scatter(breakout['breakout_date'], breakout['breakout_price'], 
+                       color=colors[i], s=30, alpha=0.6, zorder=5, marker='v')
             
             # Highlight the hold period
             hold_data = breakout['hold_period_data']
@@ -192,7 +209,7 @@ class SilverBreakoutAnalyzer:
             threshold_pct = 5.0  # fallback for legacy calls
         median_return = self.breakouts['future_return'].median()
         ax1.set_title(f'Silver Breakout Analysis ({self.symbol})\n'
-                     f'≥{threshold_pct:.0f}% Daily Increase → 2-Day Hold → 6-Month Result\n'
+                     f'≥{threshold_pct:.0f}% Daily Increase → Hold Above Low → 6-Month Result\n'
                      f'Win Rate: {(self.breakouts["is_winner"].sum() / len(self.breakouts) * 100):.1f}% '
                      f'({self.breakouts["is_winner"].sum()}/{len(self.breakouts)}) | '
                      f'Median Return: {median_return:.1f}%', 

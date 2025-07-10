@@ -7,7 +7,7 @@ A comprehensive yfinance-based script that analyzes silver's historical breakout
 The script identifies and analyzes historical instances where:
 
 1. **Silver goes up ≥5% in one day** (breakout day)
-2. **Holds above that breakout price for the next 2 days** (confirmation period)
+2. **Holds above the low of the breakout day for at least 2 days** (confirmation period)
 3. **Is higher 6 months (~126 trading days) later** (success criteria)
 
 It then calculates the **win rate** - the percentage of times silver was higher 6 months after a valid breakout.
@@ -16,7 +16,7 @@ It then calculates the **win rate** - the percentage of times silver was higher 
 
 - 📊 **Historical Analysis**: Analyzes silver price data from 2000 to present
 - 🎯 **Breakout Identification**: Finds days with ≥5% daily increases
-- ✅ **Confirmation Check**: Verifies 2-day hold above breakout price
+- ✅ **Confirmation Check**: Verifies at least 2-day hold above breakout day's low
 - 📈 **Win Rate Calculation**: Determines success rate over 6 months
 - 📉 **Visualization**: Creates charts showing breakout periods and results
 - 📋 **Data Export**: Exports results to CSV for further analysis
