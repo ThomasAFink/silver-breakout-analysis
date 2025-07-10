@@ -47,11 +47,11 @@ wheels/
 ehthumbs.db
 Thumbs.db
 
-# Output files (optional - remove if you want to include them)
-output/*.png
-output/*.csv
-*.png
-*.csv
+# Output files (keeping them in the repo)
+# output/*.png
+# output/*.csv
+# *.png
+# *.csv
 
 # Logs
 *.log 
