@@ -19,9 +19,9 @@ def run_analysis():
         
         # Run analysis with default parameters
         breakouts = analyzer.identify_breakouts(
-            threshold_pct=5.0,
+            threshold_pct=5,
             hold_days=2,
-            future_days=126
+            future_days=252
         )
         
         if breakouts is not None and len(breakouts) > 0:

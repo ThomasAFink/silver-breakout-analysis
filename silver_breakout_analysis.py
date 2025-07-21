@@ -84,46 +84,39 @@ class SilverBreakoutAnalyzer:
             
             # Check if we have enough future data
             future_idx = self.data.index.get_loc(breakout_date) + future_days
-            if future_idx >= len(self.data):
-                continue
+            has_future_data = future_idx < len(self.data)
             
-            # Check if price holds above breakout for at least hold_days
+            # Check if price holds above breakout for hold_days
             holds_above = True
-            consecutive_days_above = 0
-            
-            # Check each day after the breakout
-            for i in range(1, len(self.data) - self.data.index.get_loc(breakout_date)):
+            for i in range(1, hold_days + 1):
                 check_idx = self.data.index.get_loc(breakout_date) + i
                 if check_idx >= len(self.data):
+                    holds_above = False
                     break
                 
-                if self.data.iloc[check_idx]['Close'] >= breakout_price:
-                    consecutive_days_above += 1
-                else:
-                    # Price dropped below breakout level, check if we already met the minimum
-                    if consecutive_days_above >= hold_days:
-                        break
-                    else:
-                        holds_above = False
-                        break
-            
-            # Check if we met the minimum hold requirement
-            if consecutive_days_above < hold_days:
-                holds_above = False
+                if self.data.iloc[check_idx]['Close'] < breakout_price:
+                    holds_above = False
+                    break
             
             if not holds_above:
                 continue
             
-            # Check future price after future_days
-            future_price = self.data.iloc[future_idx]['Close']
-            future_return = ((future_price - breakout_price) / breakout_price) * 100
-            is_winner = future_price > breakout_price
+            # Check future price after future_days (if we have the data)
+            if has_future_data:
+                future_price = self.data.iloc[future_idx]['Close']
+                future_return = ((future_price - breakout_price) / breakout_price) * 100
+                is_winner = future_price > breakout_price
+                status = 'completed'
+            else:
+                # For recent breakouts without enough future data
+                future_price = None
+                future_return = None
+                is_winner = None
+                status = 'pending'
             
-            # Get the actual hold period data for visualization (up to 10 days max for display)
+            # Get the hold period data for visualization
             hold_period_data = []
-            max_display_days = min(10, len(self.data) - self.data.index.get_loc(breakout_date))
-            
-            for i in range(max_display_days):
+            for i in range(hold_days + 1):
                 check_idx = self.data.index.get_loc(breakout_date) + i
                 if check_idx < len(self.data):
                     hold_period_data.append({
@@ -138,33 +131,47 @@ class SilverBreakoutAnalyzer:
                 'future_price': future_price,
                 'future_return': future_return,
                 'is_winner': is_winner,
+                'status': status,
                 'hold_period_data': hold_period_data
             })
         
         self.breakouts = pd.DataFrame(breakout_results)
         
         if len(self.breakouts) > 0:
-            win_rate = (self.breakouts['is_winner'].sum() / len(self.breakouts)) * 100
-            avg_future_return = self.breakouts['future_return'].mean()
+            # Separate completed and pending breakouts
+            completed_breakouts = self.breakouts[self.breakouts['status'] == 'completed']
+            pending_breakouts = self.breakouts[self.breakouts['status'] == 'pending']
             
             print(f"\nBreakout Analysis Results:")
             print(f"Total valid breakouts: {len(self.breakouts)}")
-            print(f"Win rate: {win_rate:.1f}% ({self.breakouts['is_winner'].sum()}/{len(self.breakouts)})")
-            print(f"Average future return: {avg_future_return:.1f}%")
-            print(f"Average breakout return: {self.breakouts['breakout_return'].mean():.1f}%")
+            print(f"Completed breakouts: {len(completed_breakouts)}")
+            print(f"Pending breakouts (recent, awaiting results): {len(pending_breakouts)}")
             
-            # Show some statistics
-            print(f"\nFuture Return Statistics:")
-            print(f"Min: {self.breakouts['future_return'].min():.1f}%")
-            print(f"Max: {self.breakouts['future_return'].max():.1f}%")
-            print(f"Std Dev: {self.breakouts['future_return'].std():.1f}%")
+            if len(completed_breakouts) > 0:
+                # Convert to proper boolean for arithmetic
+                wins = (completed_breakouts['is_winner'] == True).sum()
+                win_rate = (wins / len(completed_breakouts)) * 100
+                avg_future_return = completed_breakouts['future_return'].mean()
+                
+                print(f"Win rate (completed only): {win_rate:.1f}% ({wins}/{len(completed_breakouts)})")
+                print(f"Average future return: {avg_future_return:.1f}%")
+                print(f"Average breakout return: {self.breakouts['breakout_return'].mean():.1f}%")
+                
+                # Show some statistics for completed breakouts
+                print(f"\nFuture Return Statistics (Completed):")
+                print(f"Min: {completed_breakouts['future_return'].min():.1f}%")
+                print(f"Max: {completed_breakouts['future_return'].max():.1f}%")
+                print(f"Std Dev: {completed_breakouts['future_return'].std():.1f}%")
             
             # Show recent breakouts
             print(f"\nRecent Breakouts (last 10):")
             recent_breakouts = self.breakouts.tail(10)
             for _, breakout in recent_breakouts.iterrows():
-                status = "WIN" if breakout['is_winner'] else "LOSS"
-                print(f"{breakout['breakout_date'].date()}: {breakout['breakout_return']:.1f}% → {breakout['future_return']:.1f}% ({status})")
+                if breakout['status'] == 'pending':
+                    print(f"{breakout['breakout_date'].date()}: {breakout['breakout_return']:.1f}% → PENDING (awaiting {future_days} trading days)")
+                else:
+                    status = "WIN" if breakout['is_winner'] else "LOSS"
+                    print(f"{breakout['breakout_date'].date()}: {breakout['breakout_return']:.1f}% → {breakout['future_return']:.1f}% ({status})")
         else:
             print("No valid breakouts found with the given criteria")
         
@@ -181,8 +188,15 @@ class SilverBreakoutAnalyzer:
         # Main price chart
         ax1.plot(self.data.index, self.data['Close'], color='gray', alpha=0.7, linewidth=1, label='Silver Price')
         
-        # Highlight breakout periods
-        colors = ['green' if b else 'red' for b in self.breakouts['is_winner']]
+        # Highlight breakout periods  
+        colors = []
+        for _, breakout in self.breakouts.iterrows():
+            if breakout['status'] == 'pending':
+                colors.append('orange')  # Orange for pending breakouts
+            elif breakout['is_winner']:
+                colors.append('green')   # Green for wins
+            else:
+                colors.append('red')     # Red for losses
         
         for i, (_, breakout) in enumerate(self.breakouts.iterrows()):
             # Plot the breakout day (close price) and breakout level (low)
@@ -207,11 +221,27 @@ class SilverBreakoutAnalyzer:
         
         if threshold_pct is None:
             threshold_pct = 5.0  # fallback for legacy calls
-        median_return = self.breakouts['future_return'].median()
+            
+        # Calculate stats for completed breakouts only
+        completed_breakouts = self.breakouts[self.breakouts['status'] == 'completed']
+        pending_count = len(self.breakouts[self.breakouts['status'] == 'pending'])
+        
+        if len(completed_breakouts) > 0:
+            median_return = completed_breakouts['future_return'].median()
+            win_count = (completed_breakouts["is_winner"] == True).sum()
+            win_rate = (win_count / len(completed_breakouts) * 100)
+            completed_count = len(completed_breakouts)
+        else:
+            median_return = 0
+            win_rate = 0
+            win_count = 0
+            completed_count = 0
+            
+        title_pending = f" + {pending_count} pending" if pending_count > 0 else ""
         ax1.set_title(f'Silver Breakout Analysis ({self.symbol})\n'
-                     f'≥{threshold_pct:.0f}% Daily Increase → Hold Above Low → 6-Month Result\n'
-                     f'Win Rate: {(self.breakouts["is_winner"].sum() / len(self.breakouts) * 100):.1f}% '
-                     f'({self.breakouts["is_winner"].sum()}/{len(self.breakouts)}) | '
+                     f'≥{threshold_pct:.0f}% Daily Increase → Hold Above Low → 12-Month Result\n'
+                     f'Win Rate: {win_rate:.1f}% '
+                     f'({win_count}/{completed_count} completed{title_pending}) | '
                      f'Median Return: {median_return:.1f}%', 
                      fontsize=14, fontweight='bold')
         ax1.set_ylabel('Price ($)', fontsize=12)
@@ -251,9 +281,16 @@ class SilverBreakoutAnalyzer:
             print("No breakouts to plot")
             return
         
+        # Only use completed breakouts (exclude pending ones)
+        completed_breakouts = self.breakouts[self.breakouts['status'] == 'completed'].copy()
+        
+        if len(completed_breakouts) == 0:
+            print("No completed breakouts to plot")
+            return
+        
         # Group by year
-        self.breakouts['year'] = self.breakouts['breakout_date'].dt.year
-        yearly_stats = self.breakouts.groupby('year').agg({
+        completed_breakouts['year'] = completed_breakouts['breakout_date'].dt.year
+        yearly_stats = completed_breakouts.groupby('year').agg({
             'is_winner': ['count', 'sum']
         }).round(2)
         
