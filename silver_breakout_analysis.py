@@ -289,9 +289,16 @@ class SilverBreakoutAnalyzer:
             return
         
         # Group by year
+        # Ensure breakout_date is datetime and extract year
+        if not pd.api.types.is_datetime64_any_dtype(completed_breakouts['breakout_date']):
+            completed_breakouts['breakout_date'] = pd.to_datetime(completed_breakouts['breakout_date'])
         completed_breakouts['year'] = completed_breakouts['breakout_date'].dt.year
+        
+        # Convert is_winner to boolean/numeric for aggregation
+        completed_breakouts['is_winner_numeric'] = completed_breakouts['is_winner'].astype(int)
+        
         yearly_stats = completed_breakouts.groupby('year').agg({
-            'is_winner': ['count', 'sum']
+            'is_winner_numeric': ['count', 'sum']
         }).round(2)
         
         yearly_stats.columns = ['total_breakouts', 'wins']
@@ -371,17 +378,35 @@ class SilverBreakoutAnalyzer:
             )
             
             if breakouts is not None and len(breakouts) > 0:
-                win_rate = (breakouts['is_winner'].sum() / len(breakouts)) * 100
-                avg_return = breakouts['future_return'].mean()
-                median_return = breakouts['future_return'].median()
-                min_return = breakouts['future_return'].min()
-                max_return = breakouts['future_return'].max()
-                std_return = breakouts['future_return'].std()
+                # Only use completed breakouts for statistics
+                completed = breakouts[breakouts['status'] == 'completed'].copy()
+                if len(completed) > 0:
+                    # Convert is_winner to numeric for calculation
+                    completed['is_winner_numeric'] = completed['is_winner'].astype(int)
+                    win_rate = (completed['is_winner_numeric'].sum() / len(completed)) * 100
+                    avg_return = completed['future_return'].mean()
+                    median_return = completed['future_return'].median()
+                    min_return = completed['future_return'].min()
+                    max_return = completed['future_return'].max()
+                    std_return = completed['future_return'].std()
+                    completed_count = len(completed)
+                    wins_count = int(completed['is_winner_numeric'].sum())
+                else:
+                    # No completed breakouts yet
+                    win_rate = 0.0
+                    avg_return = 0.0
+                    median_return = 0.0
+                    min_return = 0.0
+                    max_return = 0.0
+                    std_return = 0.0
+                    completed_count = 0
+                    wins_count = 0
                 
                 results.append({
                     'threshold_pct': threshold,
                     'total_breakouts': len(breakouts),
-                    'wins': breakouts['is_winner'].sum(),
+                    'completed_breakouts': completed_count,
+                    'wins': wins_count,
                     'win_rate': win_rate,
                     'avg_return': avg_return,
                     'median_return': median_return,
